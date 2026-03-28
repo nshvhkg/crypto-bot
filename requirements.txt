@@ -1,7 +1,5 @@
-```
-   python-telegram-bot==20.6
-   ccxt
-   pandas
-   pandas-ta
-   numpy
-   ```
+python-telegram-bot==20.6
+ccxt
+pandas
+pandas-ta
+numpy
