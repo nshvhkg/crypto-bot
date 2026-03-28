@@ -7,25 +7,18 @@ import ccxt.async_support as ccxt
 from datetime import datetime, timedelta
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ========== 从环境变量读取配置 ==========
 BOT_TOKEN = os.getenv("8682468007:AAEZcluqk6rgkLjVkaYEA-paJxlwnmsU59o")
 CHAT_ID = os.getenv("7550540182")
 if not BOT_TOKEN or not CHAT_ID:
     raise Exception("请设置环境变量 BOT_TOKEN 和 CHAT_ID")
 
-# 交易所
-EXCHANGE = ccxt.binance({'enableRateLimit': True, 'options': {'defaultType': 'spot'}})
-
-# 存储用户配置（仅支持你一个人）
-user_pairs = []  # 每个元素 {"symbol": "BTC/USDT", "timeframe": "1h", "enabled": True}
-
-# 信号去重
+EXCHANGE = ccxt.binance({'enableRateLimit': True})
+user_pairs = []
 signal_log = {}
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ==================== 技术指标 ====================
 def calculate_indicators(df):
     df['rsi'] = ta.rsi(df['close'], length=14)
     df['volume_ma'] = df['volume'].rolling(20).mean()
@@ -43,7 +36,6 @@ def generate_signals(df):
     signals = []
     last = df.iloc[-1]
     prev = df.iloc[-2] if len(df) > 1 else last
-
     rsi = last['rsi']
     vol_ratio = last['volume_ratio']
     close = last['close']
@@ -51,22 +43,14 @@ def generate_signals(df):
     bb_lower = last['bb_lower']
     ema20 = last['ema20']
     ema50 = last['ema50']
-
-    # 趋势判断
     is_uptrend = close > ema20 and ema20 > ema50
     is_downtrend = close < ema20 and ema20 < ema50
-    is_chop = not is_uptrend and not is_downtrend
-
-    if is_chop:
+    if not is_uptrend and not is_downtrend:
         return signals
-
-    # 买入条件
     if is_uptrend and rsi < 30 and vol_ratio > 1.3:
         signals.append({"type": "BUY", "reason": f"RSI超卖({rsi:.1f})+放量({vol_ratio:.1f}x)"})
-    # 卖出条件
     if is_downtrend and rsi > 70 and vol_ratio > 1.3:
         signals.append({"type": "SELL", "reason": f"RSI超买({rsi:.1f})+放量({vol_ratio:.1f}x)"})
-
     return signals
 
 async def analyze_and_notify(symbol, timeframe):
@@ -79,12 +63,10 @@ async def analyze_and_notify(symbol, timeframe):
         signals = generate_signals(df)
         if not signals:
             return
-
         close_now = df.iloc[-1]['close']
         close_prev = df.iloc[-2]['close'] if len(df) > 1 else close_now
         change_pct = (close_now - close_prev) / close_prev * 100
         change_str = f"{'+' if change_pct >= 0 else ''}{change_pct:.2f}%"
-
         now = datetime.now()
         for sig in signals:
             key = f"{symbol}_{sig['type']}"
@@ -109,16 +91,8 @@ async def scheduled_analysis(context: ContextTypes.DEFAULT_TYPE):
         if pair.get("enabled", True):
             await analyze_and_notify(pair["symbol"], pair["timeframe"])
 
-# ==================== Telegram 命令 ====================
 async def start(update, context):
-    await update.message.reply_text(
-        "🤖 机器人已启动！\n"
-        "/addpair BTC/USDT 1h - 添加监控\n"
-        "/removepair BTC/USDT - 移除\n"
-        "/listpairs - 查看列表\n"
-        "/toggle BTC/USDT - 启用/禁用\n"
-        "/help - 帮助"
-    )
+    await update.message.reply_text("🤖 机器人已启动！\n/addpair BTC/USDT 1h 添加监控")
 
 async def add_pair(update, context):
     args = context.args
@@ -130,10 +104,6 @@ async def add_pair(update, context):
     if tf not in ['15m', '1h', '4h', '1d']:
         await update.message.reply_text("周期须为 15m/1h/4h/1d")
         return
-    for p in user_pairs:
-        if p['symbol'] == symbol:
-            await update.message.reply_text(f"{symbol} 已存在")
-            return
     user_pairs.append({"symbol": symbol, "timeframe": tf, "enabled": True})
     await update.message.reply_text(f"✅ 已添加 {symbol} ({tf})")
 
@@ -166,12 +136,7 @@ async def toggle_pair(update, context):
     await update.message.reply_text("未找到")
 
 async def help_command(update, context):
-    await update.message.reply_text(
-        "/addpair <交易对> <周期> - 添加监控\n"
-        "/removepair <交易对> - 移除\n"
-        "/listpairs - 列表\n"
-        "/toggle <交易对> - 启用/禁用"
-    )
+    await update.message.reply_text("/addpair <交易对> <周期>\n/removepair <交易对>\n/listpairs\n/toggle <交易对>")
 
 async def main():
     global application
